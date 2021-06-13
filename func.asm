@@ -17,7 +17,6 @@ decode_ean8:
 
         mov     eax, [ebp + 8]
         mov	    ebx, [ebp + 12]			;void *img
-        mov	    edi, -1			        ;counter for current byte
         xor	    esi, esi			    ;where binary code of number is
         xor 	edx, edx			    ;checksum
         xor	    ecx, ecx			    ;for counters
@@ -25,143 +24,100 @@ decode_ean8:
         mov     dx, [ebx]
 
 check_101:
-;1) set $cl to 3
-        mov     cl, 3
+        mov     cl, 3                   ;counter of 101 sequence
 check_101_loop:
-;1) go to check_bits
-;2) decrement $cl
-;3) shift left $esi
-;4) if $cl != 0 go to check_101_loop
-        call    check_bits
-        dec     cl
-        test    cl, cl
-        jnz     check_101_loop
+        call    check_bits              ;get bits of column
+        dec     cl                      ;decrement cl
+        test    cl, cl                  ;check if cl == 0
+        jnz     check_101_loop          ;if not repeat
 check_101_value:
-;1) mov prefix to $ecx
-;2) negation of $esi
-;3) compare $ecx and $esi
-;4) if not equal go to error_bits
-;5) xor $esi and $ecx !(?)!
         mov     cl, [prefix]
-        cmp     ecx, esi
-        jne     error_bits
-        xor     esi, esi
+        cmp     ecx, esi                ;compare prefix with read value
+        jne     error_bits              ;if not the same barcode is invalid
+        xor     esi, esi                ;prepare for numbers decoding
         xor     ecx, ecx
 
-decode_first_numbers:
-;1) set two counters - 7 and 4 in $ch and $cl
-        mov     ch, 7
-        mov     cl, 4
-decode_number_loop:
-;1) go to check_bits
-;2) dec $dh
-;3) shift left $esi <- space for next bit
-;4) if $dh != 0, go to decode_number_loop
-        call    check_bits
+decode_left_numbers:
+        mov     ch, 7                   ;counter of bits for one number
+        mov     cl, 4                   ;counter of number left to decode
+number_loop:
+        call    check_bits              ;get bits of column
         dec     ch
         test    ch, ch
-        jnz     decode_number_loop
-decode_number_value:
-;1) push $ebx, and $ecx
-;2) set $ch to 0
+        jnz     number_loop             ;if not each column has been decoded repeat
+number_value:
         push    ebx
         push    ecx
 
-        mov     ecx, -1
-decode_number_value_loop:
-;1) mov left_codes + $ch to $ebx
-;2) compare $esi and $ebx
-;3) increment $ch
-;4) if not equal go to decode_number_value_loop
-;5) save $ch to $eax
-;6) decrement $al
-;7) pop $ebx, $ecx
+        mov     ecx, -1                 ;value which will move pointer to codes_values
+number_value_loop:
         mov     ebx, codes_left
         inc     ecx
-        mov     bl, [ebx + ecx]
+        mov     bl, [ebx + ecx]         ;get next code
         xor     bh, bh
-        cmp     si, bx
-        jne     decode_number_value_loop
-        mov     [eax], cl
+        cmp     si, bx                  ;check if equal
+        jne     number_value_loop
+        mov     [eax], cl               ;put index of code in *out buff
         inc     eax
 
         pop     ecx
         pop     ebx
-decode_next_number:
-;1) if $dl == 0 go to middle
-;2) set $dh to 7 again
-;3) go to decode_number_loop
+next_number:
         xor     esi, esi
         dec     cl
         test    cl, cl
         jz      middle
         mov     ch, 7
-        jmp     decode_number_loop
+        jmp     number_loop
 
 middle:
-;1) set $cl to 5
         xor     ecx, ecx
         mov     cl, 5
 middle_loop:
-;1) go to check bits
-;2) decrement $cl
-;3) shift left $esi <- value for next bit
-;4) if $cl != 0 go to middle_loop
         call    check_bits
         dec     cl
         test    cl, cl
         jnz     middle_loop
 middle_value:
-;1) mov middle (data) to $ecx
-;2) compare middle and $esi
-;3) if not equal go to error_bits
-;4) xor $esi, $ecx
         xor     ecx, ecx
         mov     cl, [middle_v]
         cmp     ecx, esi
         jne     error_bits
         xor     esi, esi
 
-decode_lnumbers:
-;1) set two counters - 7 and 3 in $dh and $dl
+decode_right_numbers:
         xor     ecx, ecx
         mov     ch, 7
         mov     cl, 4
-decode_lnumber_loop:
-;1) go to check_bits
-;2) dec $dh
-;3) shift left $esi <- space for next bit
-;4) if $dh != 0, go to decode_lnumber_loop
+r_number_loop:
         call    check_bits
         dec     ch
         test    ch, ch
-        jnz     decode_lnumber_loop
-decode_lnumber_value:
-;1) push $ebx, and $ecx
-;2) set $ch to 0
+        jnz     r_number_loop
+r_number_value:
         push    ebx
         push    ecx
 
         mov     ecx, -1
-decode_lnumber_value_loop:
+r_number_value_loop:
         mov     ebx, codes_right
         inc     ecx
         mov     bl, [ebx + ecx]
         xor     bh, bh
         cmp     si, bx
-        jne     decode_lnumber_value_loop
+        jne     r_number_value_loop
         mov     [eax], cl
         inc     eax
 
         pop     ecx
         pop     ebx
-decode_next_lnumber:
+next_r_number:
         xor     esi, esi
         dec     cl
         test    cl, cl
         jz      epilog
         mov     ch, 7
-        jmp     decode_lnumber_loop
+        jmp     r_number_loop
 
 ;checksum:
 ;1) xor $edx
@@ -206,14 +162,10 @@ decode_next_lnumber:
 
 
 check_bits:
-;1) push $edx and $ecx, then get byte into $dl
-;2) mov $edi into $ch - number of pixel in one column
-;3) shift left $dl (get first bit to $dh)
-;4) move $dh to $cl
         push    ecx
 
         xor     ecx, ecx
-        mov     ch, [ebp + 16]
+        mov     ch, [ebp + 16]              ;pixels per one column
 check_bits_get_byte:
         test    edi, edi
         jz      get_byte
@@ -224,12 +176,6 @@ check_bits_byte:
         dec     ch
         dec     edi
 check_bits_loop:
-;1) xor $dh and shift left $dl
-;2) check whether $dl is empty if yes go to check_bits
-;3) compare $dh and $cl if not the same go to error_bits
-;4) move $cl to $dh
-;5) decrement $ch
-;6) if $ch != 0 go to check_bits
         test    ch, ch
         jz      check_bits_write_value
         test    edi, edi
@@ -242,10 +188,9 @@ check_bits_loop:
         dec     edi
         jmp     check_bits_loop
 check_bits_write_value:
-;1) test $cl if zero go to check_bits_white
-;2) increment $esi
         test    cl, cl
         jz      check_bits_white
+check_bits_black:
         shl     esi, 1
         inc     esi
         jmp     check_bits_return
@@ -262,7 +207,6 @@ get_byte:
         jmp     check_bits_byte
 
 error_bits:
-;1) leave *out buff empty
         xor     eax, eax
 
 epilog:
