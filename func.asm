@@ -115,50 +115,53 @@ next_r_number:
         xor     esi, esi
         dec     cl
         test    cl, cl
-        jz      epilog
+        jz      checksum
         mov     ch, 7
         jmp     r_number_loop
 
-;checksum:
-;1) xor $edx
-;2) set counter $cl to 0
-;        xor     edx, edx
-;        xor     ecx, ecx
-;        xor     ebx, ebx
-;checksum_loop:
-;1) check if $cl == 7 if yes go to checksum_check
-;2) mov [$eax + $cl] to $ebx
-;3) add $edx, $ebx*3
-;4) increment $cl
-;5) mod%2 if value == 0 go to checksum_even_number
-;        cmp     dl, 7
-;        je      checksum_check
-;        mov     ebx, [eax + edx]
-;        inc     edx
-;        shr     ebx, 1                      ;modulo 2
-;        test    ebx, ebx
-;        jz      checksum_even_number
-;checksum_odd_number:
-;        lea     ecx, [ebx + ebx*2]
-;        jmp     checksum_loop
-;checksum_even_number:
-;        lea     ecx, ebx
-;        jmp     checksum_loop
-;checksum_check:
-;1) compare $edx with $esi
-;2) if not equal go to error_bits
-;3) daj index tej wartości do eax
-;modulo_10:
-;        push    eax
-;        mov     eax, edx
-;        push    edx
-;        push    ebx
-;        mov     ebx, 10
-;        div     ebx
-;        test    edx, edx
-;        cmp     edx, esi
-;        jne     error_bits
-;        jmp     epilog
+checksum:
+        xor     edx, edx
+        xor     ecx, ecx
+        xor     ebx, ebx
+        xor     edi, edi
+        mov     eax, [ebp + 8]
+checksum_loop:
+        cmp     dl, 7
+        je      checksum_value
+        mov     bl, [eax + edx]
+        mov     edi, ebx
+        inc     edx
+        mov     bh, dl
+        shl     bh, 7                     ;modulo 2
+        test    bh, bh
+        jz      checksum_even_number
+checksum_odd_number:
+        lea     edi, [edi + edi*2]
+        lea     ecx, [edi + ecx]
+        xor     bh, bh
+        jmp     checksum_loop
+checksum_even_number:
+        lea     ecx, [edi + ecx]
+        xor     bh, bh
+        jmp     checksum_loop
+checksum_value:
+        xor     eax, eax
+        xor     ebx, ebx
+        mov     bl, 10
+        mov     eax, ecx
+        div     bl
+        xor     al, al
+        sub     bl, al
+        cmp     bl, 10
+        jne     checksum_check
+        xor     bl, bl
+checksum_check:
+        mov     eax, [ebp + 8]
+        mov     cl, [eax + 7]
+        cmp     bl, cl
+        jne     error_bits
+        jmp     epilog
+
 
 
 check_bits:
